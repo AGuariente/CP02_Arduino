@@ -1,0 +1,200 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+const int analogIn = A0;
+const int analogHumidity = A1;
+const int greenLED = 5;
+const int yellowLED = 6;
+const int redLED = 7;
+const int buzzer = 8;
+const int tempOKMin = 10;
+const int tempOKMax = 15;
+const int humidityOKMin = 60;
+const int humidityOKMax = 80;
+// abaixo deste valor o LED amarelo deveria acender.
+const int LOW_THRESHOLD = 300;
+ // acima deste valor o LED vermelho acende.
+const int HIGH_THRESHOLD = 700;
+ // abaixo deste valor aciona o alarme.
+const int MIN_THRESHOLD = 400;
+const int LDR_PIN = A3;
+
+
+
+int humiditysensorOutput = 0;
+int RawValue = 0;
+double Voltage = 0;
+double tempC = 0;
+double tempF = 0;
+int lightValue = 0;
+int tempReadings[5];
+int tempIndex = 0;
+int tempTotal = 0;
+int humidityReadings[5];
+int humidityIndex = 0;
+int humidityTotal = 0;
+unsigned long previousMillis = 0;
+const long interval = 5000;
+LiquidCrystal_I2C lcd(0x20,16,2);
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(analogHumidity, INPUT);
+  pinMode(greenLED, OUTPUT);
+  pinMode(yellowLED, OUTPUT);
+  pinMode(redLED, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+}
+
+void loop() {
+  // Reading temperature
+  RawValue = analogRead(analogIn);
+  Voltage = (RawValue / 965.0) * 5; // 5000 to get millivolts.
+  tempC = ((Voltage-0.5) * 100)-4; // 500 is the offset
+  tempF = (tempC * 1.8) + 32; // convert to F
+  
+  tempTotal = tempTotal - tempReadings[tempIndex];
+  tempReadings[tempIndex] = tempC;
+  tempTotal = tempTotal + tempReadings[tempIndex];
+  tempIndex = tempIndex + 1;
+  if (tempIndex >= 5) {
+    tempIndex = 0;
+  }
+  
+  // Checking temperature range
+  if (tempTotal/5 >= tempOKMin && tempTotal/5 <= tempOKMax) {
+    digitalWrite(greenLED, HIGH);
+    digitalWrite(yellowLED, LOW);
+    digitalWrite(redLED, LOW);
+    digitalWrite(buzzer, LOW);
+    Serial.println("Temperature OK");
+    lcd.clear();
+    lcd.setCursor(2,0);
+    lcd.print("Temp. OK");
+    lcd.setCursor(2,1);
+    lcd.print("Temp. =" +String(tempC)+"C");
+  } else {
+    digitalWrite(greenLED, LOW);
+    digitalWrite(yellowLED, HIGH);
+    digitalWrite(redLED, LOW);
+    digitalWrite(buzzer, HIGH);
+    Serial.print("Temp. ");
+    if (tempTotal/5 > tempOKMax) {
+      Serial.print("Alta = ");
+      lcd.clear();
+   	 lcd.setCursor(2,0);
+   	 lcd.print("Temp. ALTA");
+   	 lcd.setCursor(2,1);
+	 lcd.print("Temp. =" +String(tempTotal/5)+"C");
+    } else {
+      Serial.print("Baixa = ");
+      lcd.clear();
+   	 lcd.setCursor(1,0);
+   	 lcd.print("Temp. BAIXA");
+   	 lcd.setCursor(2,1);
+	 lcd.print("Temp. =" +String(tempTotal/5)+"C");
+    }
+    Serial.print(tempTotal/5, 1);
+    Serial.println("C");
+  }
+delay(500);
+  // Reading light
+  lightValue = analogRead(LDR_PIN);
+  
+  humiditysensorOutput = analogRead(analogHumidity);
+  int humidityPercentage = map(humiditysensorOutput, 0, 1023, 0, 100);
+  
+  humidityTotal = humidityTotal - humidityReadings[humidityIndex];
+  humidityReadings[humidityIndex] = humidityPercentage;
+  humidityTotal = humidityTotal + humidityReadings[humidityIndex];
+  humidityIndex = humidityIndex + 1;
+  if (humidityIndex >= 5) {
+    humidityIndex = 0;
+  }
+  
+  // Checking humidity range
+  if (humidityTotal/5 >= humidityOKMin && humidityTotal/5 <= humidityOKMax) {
+    digitalWrite(redLED, LOW);
+    digitalWrite(buzzer, LOW);
+    Serial.println("Umidade OK");
+    lcd.clear();
+    lcd.setCursor(3,0);
+    lcd.print("Umidade OK");
+    lcd.setCursor(3,1);
+    lcd.print("Umidade =" +String(humidityTotal/5)+"%");
+  } else {
+    digitalWrite(redLED, HIGH);
+    digitalWrite(buzzer, HIGH);
+    Serial.print("Umidade. ");
+    if (humidityTotal/5 > humidityOKMax) {
+      Serial.print("Alta = ");
+      lcd.setCursor(2,0);
+    	lcd.print("Umidade Alta");
+      lcd.setCursor(2,1);
+    lcd.print("Umidade =" +String(humidityTotal/5)+"%");
+    } else {
+      lcd.setCursor(2,0);
+      lcd.clear();
+    	lcd.print("Umidade Baixa");
+      Serial.print("Baixa = ");
+      lcd.setCursor(2,1);
+    lcd.print("Umidade =" +String(humidityTotal/5)+"%");
+    }
+    Serial.print(humidityTotal/5);
+    Serial.println("%");
+  }
+  delay(800);
+  // Display readings
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    Serial.print("Temperature = ");
+    Serial.print(tempTotal/5, 1);
+    Serial.print("C  Humidity = ");
+    Serial.print(humidityTotal/5);
+    Serial.println("%");
+
+  }
+  delay(500); // iterate every half second
+  
+  // Lendo a luminosidade do LDR
+  int luminosidade = analogRead(greenLED)-500;
+  Serial.println(String(luminosidade));
+  // Verificando se a luminosidade está dentro dos níveis de alerta
+  if (luminosidade < LOW_THRESHOLD) {
+    digitalWrite(greenLED, LOW);
+    digitalWrite(yellowLED, HIGH);
+    digitalWrite(redLED, LOW);
+    tone(buzzer, 500, 3000);
+    Serial.print("ambiente alerta");
+    lcd.setCursor(2,1);
+    lcd.print("ambiente alerta");
+  } else if (luminosidade > HIGH_THRESHOLD) {
+    // Luminosidade acima, acende o LED vermelho e toca o buzzer
+    digitalWrite(greenLED, LOW);
+    digitalWrite(yellowLED, LOW);
+    digitalWrite(redLED, HIGH);
+    tone(buzzer, 500, 3000);
+       lcd.setCursor(2,1);
+    lcd.print("ambiente CLARO");
+  } else if (luminosidade < MIN_THRESHOLD) {
+    // Luminosidade abaixo do nível mínimo, aciona o buzzer por 3 segundos
+    digitalWrite(greenLED, LOW);
+    digitalWrite(yellowLED, LOW);
+    digitalWrite(redLED, HIGH);
+    tone(buzzer, 500, 3000);
+       lcd.setCursor(1,1);
+    lcd.print("ambiente MEIA");
+    lcd.setCursor(2,0);
+    lcd.print("LUZ");
+  } else {
+    // Luminosidade dentro do nível correto, acende o LED verde e para o buzzer
+    digitalWrite(greenLED, HIGH);
+    digitalWrite(yellowLED, LOW);
+    digitalWrite(redLED, LOW);
+    noTone(buzzer);
+  }
+  delay(800);
+}
